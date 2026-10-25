@@ -1,0 +1,42 @@
+name: iOS Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+
+      - name: Generar proyecto Xcode
+        run: xcodegen generate
+
+      - name: Compilar (simulador)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project KonnectGPS.xcodeproj \
+            -scheme KonnectGPS \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO | tee build.log
+
+      - name: Guardar .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: KonnectGPS-simulator
+          path: build/Build/Products/Debug-iphonesimulator/KonnectGPS.app
+
+      - name: Guardar log si falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
