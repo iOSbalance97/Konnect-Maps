@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15
@@ -17,22 +20,38 @@ jobs:
       - name: Generar proyecto Xcode
         run: xcodegen generate
 
-      - name: Compilar (simulador)
+      - name: Compilar para iPhone (sin firmar)
         run: |
           set -o pipefail
           xcodebuild build \
             -project KonnectGPS.xcodeproj \
             -scheme KonnectGPS \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO | tee build.log
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" | tee build.log
 
-      - name: Guardar .app
-        uses: actions/upload-artifact@v4
-        with:
-          name: KonnectGPS-simulator
-          path: build/Build/Products/Debug-iphonesimulator/KonnectGPS.app
+      - name: Crear IPA
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/KonnectGPS.app Payload/
+          zip -qry KonnectGPS.ipa Payload
+
+      - name: Publicar IPA en Releases
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag --repo "${{ github.repository }}" || true
+          gh release create latest KonnectGPS.ipa \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Konnect GPS - ultima build" \
+            --notes "Build #${{ github.run_number }} (${{ github.sha }})" \
+            --prerelease
 
       - name: Guardar log si falla
         if: failure()
