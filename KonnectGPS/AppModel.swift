@@ -2,11 +2,12 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
-enum AppTab: Hashable { case explore, saved }
+enum AppTab: Hashable { case explore, profile }
 
 @MainActor
 final class AppModel: ObservableObject {
-    private static let savedKey = "saved_places"
+    private static let listsKey = "place_lists_v2"
+    private static let legacySavedKey = "saved_places"
     private static let recentsKey = "recent_searches"
 
     @Published var tab: AppTab = .explore
@@ -14,6 +15,7 @@ final class AppModel: ObservableObject {
     // Búsqueda y resultados
     @Published var places: [Place] = []
     @Published var selectedPlace: Place?
+    @Published var droppedPin: Place?
     @Published var activeCategory: PlaceCategory?
     @Published var cityName: String?
     @Published var googleMessage: String?
@@ -21,16 +23,17 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(recents, forKey: Self.recentsKey) }
     }
 
-    // Guardados
-    @Published var saved: [SavedPlace] {
+    // Listas: Favoritos, Guardados y Sitios relevantes
+    @Published var lists: [String: [SavedPlace]] {
         didSet {
-            if let data = try? JSONEncoder().encode(saved) {
-                UserDefaults.standard.set(data, forKey: Self.savedKey)
+            if let data = try? JSONEncoder().encode(lists) {
+                UserDefaults.standard.set(data, forKey: Self.listsKey)
             }
         }
     }
 
-    // Navegación
+    // Ruta y navegación
+    @Published var origin: Place?          // nil = mi ubicación
     @Published var destination: Place?
     @Published var routes: [RouteMode: RouteInfo] = [:]
     @Published var mode: RouteMode = .driving
@@ -43,15 +46,20 @@ final class AppModel: ObservableObject {
     private let routingService = RoutingService()
     private let geocodingService = GeocodingService()
     private var cityLocation: CLLocation?
+    private var planToken = UUID()
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.savedKey),
-           let list = try? JSONDecoder().decode([SavedPlace].self, from: data) {
-            saved = list
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: Self.listsKey),
+           let decoded = try? JSONDecoder().decode([String: [SavedPlace]].self, from: data) {
+            lists = decoded
+        } else if let data = defaults.data(forKey: Self.legacySavedKey),
+                  let old = try? JSONDecoder().decode([SavedPlace].self, from: data) {
+            lists = [PlaceList.saved.rawValue: old]   // migración de la versión anterior
         } else {
-            saved = []
+            lists = [:]
         }
-        recents = UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? []
+        recents = defaults.stringArray(forKey: Self.recentsKey) ?? []
     }
 
     // MARK: Búsqueda
@@ -104,35 +112,85 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: Guardados
+    // MARK: Pulsación larga en el mapa
 
-    func isSaved(_ place: Place) -> Bool { saved.contains { $0.id == place.key } }
-
-    func toggleSaved(_ place: Place) {
-        if let index = saved.firstIndex(where: { $0.id == place.key }) {
-            saved.remove(at: index)
-        } else {
-            saved.insert(SavedPlace(place), at: 0)
-        }
+    func dropPin(at coordinate: CLLocationCoordinate2D) async {
+        let place = await geocodingService.place(at: coordinate)
+        droppedPin = place
+        selectedPlace = place
     }
 
-    func removeSaved(_ item: SavedPlace) {
-        saved.removeAll { $0.id == item.id }
+    // MARK: Listas
+
+    func items(in list: PlaceList) -> [SavedPlace] {
+        lists[list.rawValue] ?? []
+    }
+
+    func contains(_ place: Place, in list: PlaceList) -> Bool {
+        items(in: list).contains { $0.id == place.key }
+    }
+
+    func isSavedAnywhere(_ place: Place) -> Bool {
+        PlaceList.allCases.contains { contains(place, in: $0) }
+    }
+
+    func toggle(_ place: Place, in list: PlaceList) {
+        var current = items(in: list)
+        if let index = current.firstIndex(where: { $0.id == place.key }) {
+            current.remove(at: index)
+        } else {
+            current.insert(SavedPlace(place), at: 0)
+        }
+        lists[list.rawValue] = current
+    }
+
+    func remove(_ item: SavedPlace, from list: PlaceList) {
+        var current = items(in: list)
+        current.removeAll { $0.id == item.id }
+        lists[list.rawValue] = current
     }
 
     // MARK: Rutas
 
-    func startRoute(to place: Place, from origin: CLLocationCoordinate2D) async {
+    func startRoute(to place: Place, from userCoordinate: CLLocationCoordinate2D) async {
         tab = .explore
         selectedPlace = nil
+        droppedPin = nil
+        origin = nil
         destination = place
+        await replan(userCoordinate: userCoordinate)
+    }
+
+    func setOrigin(_ place: Place?, userCoordinate: CLLocationCoordinate2D) async {
+        origin = place
+        await replan(userCoordinate: userCoordinate)
+    }
+
+    func setDestination(_ place: Place, userCoordinate: CLLocationCoordinate2D) async {
+        destination = place
+        await replan(userCoordinate: userCoordinate)
+    }
+
+    func swapEndpoints(userCoordinate: CLLocationCoordinate2D) async {
+        guard let current = destination else { return }
+        let oldOrigin = origin
+        origin = current
+        destination = oldOrigin ?? Place(name: "Mi ubicación", coordinate: userCoordinate)
+        await replan(userCoordinate: userCoordinate)
+    }
+
+    func replan(userCoordinate: CLLocationCoordinate2D) async {
+        guard let destination else { return }
+        let token = UUID()
+        planToken = token
         isNavigating = false
         routes = [:]
         isLoadingRoutes = true
 
-        let result = await routingService.routes(from: origin, to: place)
+        let start = origin?.coordinate ?? userCoordinate
+        let result = await routingService.routes(from: start, to: destination)
 
-        guard destination?.id == place.id else { return }   // el usuario cerró mientras cargaba
+        guard planToken == token else { return }   // cambió el plan mientras se calculaba
         routes = result
         if result[mode] == nil, let first = RouteMode.allCases.first(where: { result[$0] != nil }) {
             mode = first
@@ -141,8 +199,28 @@ final class AppModel: ObservableObject {
         routeVersion += 1
     }
 
+    /// Empieza el guiado desde tu posición actual.
+    func beginNavigation(userCoordinate: CLLocationCoordinate2D) async {
+        if origin != nil {
+            origin = nil
+            await replan(userCoordinate: userCoordinate)
+        }
+        guard routes[mode]?.route != nil else { return }
+        isNavigating = true
+    }
+
+    /// Recalcula la ruta desde donde estás (te has salido del camino).
+    func reroute(from coordinate: CLLocationCoordinate2D) async {
+        guard let destination else { return }
+        if let info = await routingService.route(from: coordinate, to: destination, mode: mode) {
+            routes[mode] = info
+        }
+    }
+
     func stopRoute() {
+        planToken = UUID()
         destination = nil
+        origin = nil
         routes = [:]
         isNavigating = false
         isLoadingRoutes = false
