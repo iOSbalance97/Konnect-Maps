@@ -2,27 +2,37 @@ import Combine
 import CoreLocation
 import UIKit
 
-/// Servicio de ubicación: permisos, posición y rumbo.
+/// El rumbo se publica aparte para que solo se redibuje el punto del usuario.
+final class HeadingStore: ObservableObject {
+    @Published var degrees: Double = 0
+}
+
+/// Servicio de ubicación: permisos, precisión, posición y rumbo.
 final class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
+    let headingStore = HeadingStore()
 
     @Published var location: CLLocation?
-    @Published var heading: CLHeading?
     @Published var status: CLAuthorizationStatus = .notDetermined
+    @Published var accuracy: CLAccuracyAuthorization = .fullAccuracy
 
     override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 5
-        manager.headingFilter = 5
+        manager.distanceFilter = 3
+        manager.headingFilter = 3
         manager.activityType = .otherNavigation
+        manager.pausesLocationUpdatesAutomatically = false
         status = manager.authorizationStatus
+        accuracy = manager.accuracyAuthorization
         requestPermission()
     }
 
     var isAuthorized: Bool { status == .authorizedWhenInUse || status == .authorizedAlways }
     var isDenied: Bool { status == .denied || status == .restricted }
+    /// El usuario concedió solo la ubicación aproximada (sale un área grande en vez de un punto).
+    var isReduced: Bool { isAuthorized && accuracy == .reducedAccuracy }
 
     var statusText: String {
         switch status {
@@ -35,12 +45,32 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
         }
     }
 
+    var accuracyText: String { accuracy == .fullAccuracy ? "Precisa" : "Aproximada" }
+
     func requestPermission() {
         if status == .notDetermined {
             manager.requestWhenInUseAuthorization()
         } else if isAuthorized {
             startUpdates()
         }
+    }
+
+    /// Pide ubicación precisa (si el usuario solo dio la aproximada).
+    func requestFullAccuracy() {
+        manager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: "Navegacion") { [weak self] error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.accuracy = self.manager.accuracyAuthorization
+                if error != nil { self.openSettings() }
+            }
+        }
+    }
+
+    /// Más precisión y frecuencia mientras se navega.
+    func setNavigating(_ on: Bool) {
+        manager.desiredAccuracy = on ? kCLLocationAccuracyBestForNavigation : kCLLocationAccuracyBest
+        manager.distanceFilter = on ? kCLDistanceFilterNone : 3
+        manager.activityType = on ? .automotiveNavigation : .otherNavigation
     }
 
     func openSettings() {
@@ -60,15 +90,20 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         status = manager.authorizationStatus
+        accuracy = manager.accuracyAuthorization
         if isAuthorized { startUpdates() }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        location = locations.last
+        if let best = locations.last(where: { $0.horizontalAccuracy >= 0 }) {
+            location = best
+        }
+        accuracy = manager.accuracyAuthorization
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        heading = newHeading
+        let value = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        headingStore.degrees = value
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
