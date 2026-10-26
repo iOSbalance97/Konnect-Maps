@@ -3,24 +3,28 @@
 App de mapas para iOS: interfaz Liquid Glass oscura (SwiftUI) con funcionalidad estilo Google Maps.
 
 ## Qué incluye
-- **Explorar**: mapa con tono oscuro propio, búsqueda, categorías, capas, 3D y panel "Cerca de ti" plegable (se abre arrastrando).
-- **Barra inferior** de globos circulares flotantes (Explorar, Guardados).
-- **Perfil ("Tú")**: icono junto a la búsqueda; permisos de ubicación y clave de Google.
-- **Ficha de lugar**: cómo llegar, guardar, compartir; con Google: valoración, horarios, fotos y reseñas.
-- **Rutas**: coche, transporte y a pie, con giros paso a paso.
+- **Explorar**: mapa con tono oscuro propio, búsqueda a todo el ancho, categorías, capas y 3D.
+- **Lugares** (panel plegable, se abre arrastrando): Favoritos, Guardados y Sitios relevantes.
+- **Barra inferior** de globos circulares flotantes: Explorar y Tú.
+- **Pulsación larga** en el mapa: abre la dirección del punto.
+- **Ficha de lugar**: cómo llegar, guardar en listas, Street View, compartir; con Google: valoración, horarios, fotos y reseñas.
+- **Rutas A → B**: origen y destino editables, coche / transporte / a pie, lista de pasos.
+- **Navegación guiada**: giro siguiente, voz, tiempo y distancia restantes, recálculo si te desvías.
+- **Street View**: Apple Look Around o Google Street View.
 
 ## Servicios (carpeta `Services`)
-- `LocationService`: permisos, posición y rumbo.
+- `LocationService`: permisos, precisión, posición y rumbo.
 - `PlacesService`: Google Places (si hay clave) con respaldo en Apple Maps.
 - `RoutingService`: rutas con Apple Maps.
-- `GeocodingService`: nombre de la ciudad.
+- `NavigationEngine`: guiado paso a paso y voz.
+- `GeocodingService`: ciudad y dirección de un punto.
 
 ## Liquid Glass
 Se compila con Xcode 26 (runner `macos-26`). En iOS 26+ usa el cristal real del sistema; en iOS 17–25 usa un cristal oscuro equivalente.
 
 ## Google Maps
-En la app: icono de perfil > Google Maps > pegar la clave de API (Places API (New)). La clave se guarda solo en el iPhone, no en el repositorio.
+Perfil > Google Maps > pegar la clave. Activa en tu proyecto de Google Cloud: Places API (New) y, para Street View de Google, Maps Embed API. La clave se guarda solo en el iPhone.
 
 ## Compilación
-El proyecto Xcode se genera con [XcodeGen](https://github.com/yonaskolb/XcodeGen) desde `project.yml`.
+El proyecto Xcode se genera con [XcodeGen](https://github.com/yonaskolb/XcodeGen) desde `project.yml` (`Config/Info.plist` añade la petición de ubicación precisa).
 GitHub Actions compila un IPA sin firmar y lo publica en Releases (`latest`).

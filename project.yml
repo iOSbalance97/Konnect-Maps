@@ -15,9 +15,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.konnect.gps
         PRODUCT_NAME: KonnectGPS
-        MARKETING_VERSION: "0.2.0"
+        MARKETING_VERSION: "0.3.0"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Config/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: "Konnect GPS"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
