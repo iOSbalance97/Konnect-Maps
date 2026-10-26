@@ -2,7 +2,7 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
-enum AppTab: Hashable { case explore, saved, profile }
+enum AppTab: Hashable { case explore, saved }
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -15,7 +15,11 @@ final class AppModel: ObservableObject {
     @Published var places: [Place] = []
     @Published var selectedPlace: Place?
     @Published var activeCategory: PlaceCategory?
-    @Published var recents: [String] { didSet { UserDefaults.standard.set(recents, forKey: Self.recentsKey) } }
+    @Published var cityName: String?
+    @Published var googleMessage: String?
+    @Published var recents: [String] {
+        didSet { UserDefaults.standard.set(recents, forKey: Self.recentsKey) }
+    }
 
     // Guardados
     @Published var saved: [SavedPlace] {
@@ -34,6 +38,12 @@ final class AppModel: ObservableObject {
     @Published var isLoadingRoutes = false
     @Published var routeVersion = 0
 
+    // Servicios
+    private let placesService = PlacesService()
+    private let routingService = RoutingService()
+    private let geocodingService = GeocodingService()
+    private var cityLocation: CLLocation?
+
     init() {
         if let data = UserDefaults.standard.data(forKey: Self.savedKey),
            let list = try? JSONDecoder().decode([SavedPlace].self, from: data) {
@@ -49,17 +59,24 @@ final class AppModel: ObservableObject {
     func query(_ text: String, near center: CLLocationCoordinate2D) async -> [Place] {
         let t = text.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return [] }
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = t
-        request.region = MKCoordinateRegion(center: center, latitudinalMeters: 8000, longitudinalMeters: 8000)
-        guard let response = try? await MKLocalSearch(request: request).start() else { return [] }
-        return response.mapItems.map { Place(mapItem: $0) }
+        let found = await placesService.search(t, near: center)
+        googleMessage = placesService.lastGoogleMessage
+        return found
+    }
+
+    func enrich(_ place: Place) async -> Place {
+        let result = await placesService.details(for: place)
+        googleMessage = placesService.lastGoogleMessage
+        return result
+    }
+
+    func testGoogle(near center: CLLocationCoordinate2D) async {
+        _ = await query("café", near: center)
     }
 
     func toggleCategory(_ category: PlaceCategory, near center: CLLocationCoordinate2D) async {
         if activeCategory == category {
-            activeCategory = nil
-            places = []
+            clearResults()
         } else {
             activeCategory = category
             places = await query(category.query, near: center)
@@ -79,6 +96,14 @@ final class AppModel: ObservableObject {
         if recents.count > 8 { recents = Array(recents.prefix(8)) }
     }
 
+    func refreshCity(for location: CLLocation) async {
+        if let last = cityLocation, last.distance(from: location) < 10_000 { return }
+        cityLocation = location
+        if let name = await geocodingService.cityName(for: location) {
+            cityName = name
+        }
+    }
+
     // MARK: Guardados
 
     func isSaved(_ place: Place) -> Bool { saved.contains { $0.id == place.key } }
@@ -91,6 +116,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func removeSaved(_ item: SavedPlace) {
+        saved.removeAll { $0.id == item.id }
+    }
+
     // MARK: Rutas
 
     func startRoute(to place: Place, from origin: CLLocationCoordinate2D) async {
@@ -101,21 +130,7 @@ final class AppModel: ObservableObject {
         routes = [:]
         isLoadingRoutes = true
 
-        var result: [RouteMode: RouteInfo] = [:]
-        for m in RouteMode.allCases {
-            let request = MKDirections.Request()
-            request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-            request.destination = place.mapItem
-            request.transportType = m.transportType
-            let directions = MKDirections(request: request)
-            if m == .transit {
-                if let eta = try? await directions.calculateETA() {
-                    result[m] = RouteInfo(time: eta.expectedTravelTime, distance: eta.distance, route: nil)
-                }
-            } else if let route = try? await directions.calculate().routes.first {
-                result[m] = RouteInfo(time: route.expectedTravelTime, distance: route.distance, route: route)
-            }
-        }
+        let result = await routingService.routes(from: origin, to: place)
 
         guard destination?.id == place.id else { return }   // el usuario cerró mientras cargaba
         routes = result
