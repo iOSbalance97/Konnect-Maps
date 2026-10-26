@@ -7,7 +7,10 @@ struct SearchView: View {
     @Environment(\.dismiss) private var dismiss
 
     let center: CLLocationCoordinate2D
-    let onPick: (Place) -> Void
+    var title: String = "Buscar lugares"
+    var allowCurrentLocation = false
+    /// nil = "Mi ubicación"
+    let onPick: (Place?) -> Void
 
     @State private var text = ""
     @State private var results: [Place] = []
@@ -19,7 +22,7 @@ struct SearchView: View {
             HStack(spacing: 12) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Buscar lugares", text: $text)
+                    TextField(title, text: $text)
                         .focused($focused)
                         .submitLabel(.search)
                         .autocorrectionDisabled()
@@ -40,12 +43,22 @@ struct SearchView: View {
 
             List {
                 if text.trimmingCharacters(in: .whitespaces).isEmpty {
+                    if allowCurrentLocation {
+                        Button {
+                            onPick(nil)
+                            dismiss()
+                        } label: {
+                            Label("Mi ubicación", systemImage: "location.fill")
+                        }
+                        .listRowBackground(Color.clear)
+                    }
                     if !model.recents.isEmpty {
                         Section {
                             ForEach(model.recents, id: \.self) { recent in
                                 Button { text = recent } label: {
                                     Label(recent, systemImage: "clock.arrow.circlepath")
                                 }
+                                .listRowBackground(Color.clear)
                             }
                         } header: {
                             HStack {
@@ -103,14 +116,21 @@ struct SearchView: View {
         return parts.joined(separator: " · ")
     }
 
+    /// Intro: si es búsqueda normal, muestra todos los resultados en el mapa;
+    /// si se está eligiendo origen/destino, elige el primer resultado.
     private func submit() {
         let query = text
         model.addRecent(query)
         Task { @MainActor in
             let found = await model.query(query, near: center)
-            model.places = found
-            model.activeCategory = nil
-            dismiss()
+            if title == SearchTarget.search.title {
+                model.places = found
+                model.activeCategory = nil
+                dismiss()
+            } else if let first = found.first {
+                onPick(first)
+                dismiss()
+            }
         }
     }
 }

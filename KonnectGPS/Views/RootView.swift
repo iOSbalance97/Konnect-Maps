@@ -13,7 +13,7 @@ struct BubbleBar: View {
 
     private let items: [BarItem] = [
         BarItem(tab: .explore, icon: "map.fill", title: "Explorar"),
-        BarItem(tab: .saved, icon: "bookmark.fill", title: "Guardados")
+        BarItem(tab: .profile, icon: "person.fill", title: "Tú")
     ]
 
     var body: some View {
@@ -28,11 +28,10 @@ struct BubbleBar: View {
                             .foregroundStyle(Color.white)
                             .frame(width: 68, height: 68)
                             .liquidGlass(in: Circle(),
-                                         tint: tab == item.tab ? Color.konnectBlue.opacity(0.75) : Color.glassTint,
-                                         interactive: true)
+                                         tint: tab == item.tab ? Color.konnectBlue.opacity(0.75) : Color.glassTint)
                             .scaleEffect(tab == item.tab ? 1.06 : 1.0)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel(item.title)
                 }
             }
@@ -51,8 +50,8 @@ struct RootView: View {
                 .opacity(model.tab == .explore ? 1 : 0)
                 .allowsHitTesting(model.tab == .explore)
 
-            if model.tab == .saved {
-                SavedView()
+            if model.tab == .profile {
+                ProfileView()
                     .transition(.opacity)
             }
 
@@ -65,7 +64,9 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.25), value: model.tab)
         .animation(.easeInOut(duration: 0.25), value: model.isNavigating)
         .tint(.konnectBlue)
-        .sheet(item: $model.selectedPlace) { place in
+        .sheet(item: $model.selectedPlace, onDismiss: {
+            model.droppedPin = nil
+        }) { place in
             PlaceDetailView(place: place)
                 .environmentObject(model)
                 .environmentObject(location)

@@ -6,6 +6,7 @@ struct PlaceDetailView: View {
     @EnvironmentObject var location: LocationService
     @State private var detail: Place
     @State private var showHours = false
+    @State private var showStreetView = false
 
     init(place: Place) {
         _detail = State(initialValue: place)
@@ -52,9 +53,9 @@ struct PlaceDetailView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 46)
                         .foregroundStyle(Color.white)
-                        .liquidGlass(in: Capsule(), interactive: true)
+                        .liquidGlass(in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
 
                 if detail.hasGoogleData {
                     Text("Valoraciones, horarios y fotos: Google Maps")
@@ -67,8 +68,13 @@ struct PlaceDetailView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .darkSheetBackground()
+        .fullScreenCover(isPresented: $showStreetView) {
+            StreetViewScreen(title: detail.name, coordinate: detail.coordinate)
+        }
         .task {
-            detail = await model.enrich(detail)
+            if detail.categoryText != "Dirección" {
+                detail = await model.enrich(detail)
+            }
         }
     }
 
@@ -110,25 +116,37 @@ struct PlaceDetailView: View {
     }
 
     private var actions: some View {
-        GlassGroup(spacing: 8) {
+        GlassGroup(spacing: 4) {
             HStack(spacing: 10) {
                 Button {
                     Task { await model.startRoute(to: detail, from: location.location?.coordinate ?? .madrid) }
                 } label: {
                     ActionLabel(title: "Cómo llegar", icon: "car.fill", prominent: true)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
 
-                Button { model.toggleSaved(detail) } label: {
-                    ActionLabel(title: model.isSaved(detail) ? "Guardado" : "Guardar",
-                                icon: model.isSaved(detail) ? "bookmark.fill" : "bookmark")
+                Menu {
+                    ForEach(PlaceList.allCases) { list in
+                        Button {
+                            model.toggle(detail, in: list)
+                        } label: {
+                            Label(list.title,
+                                  systemImage: model.contains(detail, in: list) ? "checkmark.circle.fill" : list.icon)
+                        }
+                    }
+                } label: {
+                    ActionLabel(title: model.isSavedAnywhere(detail) ? "Guardado" : "Guardar",
+                                icon: model.isSavedAnywhere(detail) ? "bookmark.fill" : "bookmark")
                 }
-                .buttonStyle(.plain)
+
+                Button { showStreetView = true } label: {
+                    ActionLabel(title: "Street View", icon: "binoculars.fill")
+                }
+                .buttonStyle(.pressable)
 
                 ShareLink(item: detail.shareURL) {
                     ActionLabel(title: "Compartir", icon: "square.and.arrow.up")
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -186,14 +204,16 @@ struct ActionLabel: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: icon).font(.title3)
-            Text(title).font(.footnote.weight(.medium))
+            Text(title)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .foregroundStyle(Color.white)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous),
-                     tint: prominent ? Color.konnectBlue.opacity(0.8) : Color.glassTint,
-                     interactive: true)
+                     tint: prominent ? Color.konnectBlue.opacity(0.8) : Color.glassTint)
     }
 }
 

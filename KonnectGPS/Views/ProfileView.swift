@@ -3,7 +3,6 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var location: LocationService
-    @Environment(\.dismiss) private var dismiss
 
     @AppStorage(GoogleConfig.storageKey) private var googleKey = ""
     @State private var testing = false
@@ -27,13 +26,22 @@ struct ProfileView: View {
                     }
                 }
 
-                Section("Ubicación") {
+                Section {
                     LabeledContent("Estado", value: location.statusText)
+                    if location.isAuthorized {
+                        LabeledContent("Precisión", value: location.accuracyText)
+                    }
                     if location.isDenied {
                         Button("Abrir Ajustes") { location.openSettings() }
                     } else if location.status == .notDetermined {
                         Button("Permitir ubicación") { location.requestPermission() }
+                    } else if location.isReduced {
+                        Button("Activar ubicación precisa") { location.requestFullAccuracy() }
                     }
+                } header: {
+                    Text("Ubicación")
+                } footer: {
+                    Text("Si ves un área en vez de un punto, activa «Ubicación precisa» en Ajustes > Privacidad > Localización > Konnect GPS.")
                 }
 
                 Section {
@@ -59,11 +67,17 @@ struct ProfileView: View {
                 } header: {
                     Text("Google Maps")
                 } footer: {
-                    Text("Con una clave de Places API (New) verás valoraciones, horarios, fotos y reseñas. Sin clave, la app usa solo Apple Maps. La clave se guarda únicamente en este iPhone.")
+                    Text("Con una clave de Places API (New) verás valoraciones, horarios, fotos y reseñas; para Street View de Google activa también Maps Embed API. Sin clave, la app usa Apple Maps y Look Around. La clave se guarda solo en este iPhone.")
                 }
 
-                Section("Resumen") {
-                    LabeledContent("Lugares guardados", value: "\(model.saved.count)")
+                Section("Mis listas") {
+                    ForEach(PlaceList.allCases) { list in
+                        LabeledContent {
+                            Text("\(model.items(in: list).count)")
+                        } label: {
+                            Label(list.title, systemImage: list.icon)
+                        }
+                    }
                     LabeledContent("Búsquedas recientes", value: "\(model.recents.count)")
                 }
 
@@ -73,18 +87,13 @@ struct ProfileView: View {
                 }
 
                 Section {
-                    LabeledContent("Versión", value: "0.2.0")
+                    LabeledContent("Versión", value: "0.3.0")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(KonnectBackground())
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 96) }
             .navigationTitle("Tú")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") { dismiss() }
-                }
-            }
         }
-        .presentationDetents([.large])
-        .darkSheetBackground()
     }
 }
