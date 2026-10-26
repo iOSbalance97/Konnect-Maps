@@ -16,9 +16,8 @@ extension Color {
 
 #if compiler(>=6.2)
 @available(iOS 26.0, *)
-private func makeGlass(tint: Color, interactive: Bool) -> Glass {
-    let base = Glass.regular.tint(tint)
-    return interactive ? base.interactive() : base
+private func makeGlass(tint: Color) -> Glass {
+    Glass.regular.tint(tint)
 }
 #endif
 
@@ -45,16 +44,20 @@ private struct FallbackGlass<S: Shape>: ViewModifier {
 }
 
 extension View {
+    /// Cristal con forma. Toda la forma responde al toque (contentShape).
     @ViewBuilder
-    func liquidGlass<S: Shape>(in shape: S, tint: Color = Color.glassTint, interactive: Bool = false) -> some View {
+    func liquidGlass<S: Shape>(in shape: S, tint: Color = Color.glassTint) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            self.glassEffect(makeGlass(tint: tint, interactive: interactive), in: shape)
+            self.glassEffect(makeGlass(tint: tint), in: shape)
+                .contentShape(shape)
         } else {
             self.modifier(FallbackGlass(shape: shape, tint: tint))
+                .contentShape(shape)
         }
         #else
         self.modifier(FallbackGlass(shape: shape, tint: tint))
+            .contentShape(shape)
         #endif
     }
 
@@ -96,7 +99,21 @@ struct GlassGroup<Content: View>: View {
     }
 }
 
-// MARK: - Componentes
+// MARK: - Botones
+
+/// Efecto de pulsación propio (no usa el "interactive" del cristal para no robar toques).
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.spring(duration: 0.25, bounce: 0.3), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == PressableStyle {
+    static var pressable: PressableStyle { PressableStyle() }
+}
 
 struct GlassCircleButton: View {
     var icon: String? = nil
@@ -117,10 +134,9 @@ struct GlassCircleButton: View {
             .foregroundStyle(Color.white)
             .frame(width: size, height: size)
             .liquidGlass(in: Circle(),
-                         tint: active ? Color.konnectBlue.opacity(0.75) : Color.glassTint,
-                         interactive: true)
+                         tint: active ? Color.konnectBlue.opacity(0.75) : Color.glassTint)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 

@@ -26,6 +26,24 @@ extension Double {
     var ratingText: String {
         self.formatted(.number.precision(.fractionLength(1)))
     }
+
+    /// Segundos -> "12 min" / "1 h 5 min"
+    var durationText: String {
+        let minutes = Int((self / 60).rounded())
+        if minutes >= 60 { return "\(minutes / 60) h \(minutes % 60) min" }
+        return "\(max(minutes, 1)) min"
+    }
+}
+
+/// Icono del giro según el texto de la instrucción.
+func maneuverSymbol(for instruction: String) -> String {
+    let t = instruction.lowercased()
+    if t.contains("cambio de sentido") || t.contains("da la vuelta") || t.contains("u-turn") { return "arrow.uturn.left" }
+    if t.contains("rotonda") || t.contains("roundabout") { return "arrow.triangle.2.circlepath" }
+    if t.contains("derecha") || t.contains("right") { return "arrow.turn.up.right" }
+    if t.contains("izquierda") || t.contains("left") { return "arrow.turn.up.left" }
+    if t.contains("destino") || t.contains("destination") { return "flag.checkered" }
+    return "arrow.up"
 }
 
 func metersBetween(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> CLLocationDistance {
@@ -221,12 +239,38 @@ struct RouteInfo {
     let distance: CLLocationDistance
     let route: MKRoute?   // nil en transporte público (solo hay tiempo estimado)
 
-    var timeText: String {
-        let minutes = Int((time / 60).rounded())
-        if minutes >= 60 { return "\(minutes / 60) h \(minutes % 60) min" }
-        return "\(max(minutes, 1)) min"
-    }
+    var timeText: String { time.durationText }
     var arrivalText: String {
         Date().addingTimeInterval(time).formatted(date: .omitted, time: .shortened)
+    }
+}
+
+
+// MARK: - Listas de lugares
+
+enum PlaceList: String, CaseIterable, Identifiable {
+    case favorites, saved, relevant
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .favorites: return "Favoritos"
+        case .saved: return "Guardados"
+        case .relevant: return "Sitios relevantes"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .favorites: return "heart.fill"
+        case .saved: return "bookmark.fill"
+        case .relevant: return "star.fill"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .favorites: return .pink
+        case .saved: return Color.konnectBlue
+        case .relevant: return .yellow
+        }
     }
 }
