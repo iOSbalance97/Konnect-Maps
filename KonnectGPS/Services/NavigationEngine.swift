@@ -168,7 +168,7 @@ final class NavigationEngine: ObservableObject {
             var t = len2 == 0 ? 0 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
             t = max(0, min(1, t))
             let projected = MKMapPoint(x: a.x + t * dx, y: a.y + t * dy)
-            best = min(best, MKMetersBetweenMapPoints(p, projected))
+            best = min(best, p.distance(to: projected))
         }
         return best
     }
