@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
     private static let listsKey = "place_lists_v2"
     private static let legacySavedKey = "saved_places"
     private static let recentsKey = "recent_searches"
+    private static let recentPlacesKey = "recent_places_v1"
 
     @Published var tab: AppTab = .explore
 
@@ -21,6 +22,15 @@ final class AppModel: ObservableObject {
     @Published var googleMessage: String?
     @Published var recents: [String] {
         didSet { UserDefaults.standard.set(recents, forKey: Self.recentsKey) }
+    }
+
+    // Lugares buscados o visitados recientemente
+    @Published var recentPlaces: [SavedPlace] {
+        didSet {
+            if let data = try? JSONEncoder().encode(recentPlaces) {
+                UserDefaults.standard.set(data, forKey: Self.recentPlacesKey)
+            }
+        }
     }
 
     // Listas: Favoritos, Guardados y Sitios relevantes
@@ -60,6 +70,12 @@ final class AppModel: ObservableObject {
             lists = [:]
         }
         recents = defaults.stringArray(forKey: Self.recentsKey) ?? []
+        if let data = defaults.data(forKey: Self.recentPlacesKey),
+           let decoded = try? JSONDecoder().decode([SavedPlace].self, from: data) {
+            recentPlaces = decoded
+        } else {
+            recentPlaces = []
+        }
     }
 
     // MARK: Búsqueda
@@ -104,6 +120,18 @@ final class AppModel: ObservableObject {
         if recents.count > 8 { recents = Array(recents.prefix(8)) }
     }
 
+    /// Guarda un lugar en el historial de recientes (buscados/visitados).
+    func noteVisited(_ place: Place) {
+        guard place.categoryText != "Mi coche" else { return }
+        recentPlaces.removeAll { $0.id == place.key }
+        recentPlaces.insert(SavedPlace(place), at: 0)
+        if recentPlaces.count > 20 { recentPlaces = Array(recentPlaces.prefix(20)) }
+    }
+
+    func removeRecentPlace(_ item: SavedPlace) {
+        recentPlaces.removeAll { $0.id == item.id }
+    }
+
     func refreshCity(for location: CLLocation) async {
         if let last = cityLocation, last.distance(from: location) < 10_000 { return }
         cityLocation = location
@@ -128,6 +156,19 @@ final class AppModel: ObservableObject {
 
     func contains(_ place: Place, in list: PlaceList) -> Bool {
         items(in: list).contains { $0.id == place.key }
+    }
+
+    /// Un pin por lugar guardado (Favoritos > Guardados > Sitios relevantes).
+    var savedPins: [SavedPin] {
+        var seen = Set<String>()
+        var pins: [SavedPin] = []
+        for list in [PlaceList.favorites, .saved, .relevant] {
+            for item in items(in: list) where !seen.contains(item.id) {
+                seen.insert(item.id)
+                pins.append(SavedPin(id: item.id, list: list, item: item))
+            }
+        }
+        return pins
     }
 
     func isSavedAnywhere(_ place: Place) -> Bool {

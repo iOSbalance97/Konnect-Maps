@@ -1,21 +1,31 @@
 import SwiftUI
 import CoreLocation
 
+enum PanelTab: Hashable {
+    case recents, results
+    case list(PlaceList)
+}
+
 /// "Lugares": barra globo plegada que se abre/cierra pulsando y arrastrando.
-/// Pestañas interiores: Favoritos, Guardados y Sitios relevantes (+ Resultados de búsqueda).
+/// Pestañas: Recientes, (Resultados), Favoritos, Guardados y Sitios relevantes.
 struct PlacesPanel: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var location: LocationService
+    @Environment(\.verticalSizeClass) private var vSize
 
     @State private var expanded = false
     @State private var drag: CGFloat = 0
     @State private var isDraggingVertically = false
-    @State private var selectedList: PlaceList = .favorites
-    @State private var showingResults = false
+    @State private var selected: PanelTab = .recents
 
-    private let collapsedHeight: CGFloat = 60
-    private let fullHeight: CGFloat = 292
+    private var landscape: Bool { vSize == .compact }
+    private var collapsedHeight: CGFloat { landscape ? 58 : 70 }
+    private var fullHeight: CGFloat { landscape ? 238 : 376 }
+    private var cardWidth: CGFloat { landscape ? 196 : 218 }
+    private var cardHeight: CGFloat { landscape ? 112 : 150 }
+    private var pillHeight: CGFloat { landscape ? 34 : 42 }
     private var range: CGFloat { fullHeight - collapsedHeight }
+    private var cardsHeight: CGFloat { range - pillHeight - 10 - 18 }
 
     /// 0 = plegado, 1 = abierto. Sigue al dedo mientras se arrastra.
     private var progress: CGFloat {
@@ -24,13 +34,15 @@ struct PlacesPanel: View {
     }
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 30, style: .continuous)
+        RoundedRectangle(cornerRadius: 32, style: .continuous)
     }
 
     private var subtitle: String {
-        if showingResults && !model.places.isEmpty { return "\(model.places.count) resultados" }
-        let count = model.items(in: selectedList).count
-        return "\(selectedList.title) · \(count)"
+        switch selected {
+        case .recents: return "Recientes · \(model.recentPlaces.count)"
+        case .results: return "\(model.places.count) resultados"
+        case .list(let list): return "\(list.title) · \(model.items(in: list).count)"
+        }
     }
 
     var body: some View {
@@ -49,15 +61,21 @@ struct PlacesPanel: View {
         .liquidGlass(in: shape)
         .simultaneousGesture(dragGesture)
         .onChange(of: model.places.isEmpty) { _, isEmpty in
-            showingResults = !isEmpty
+            if isEmpty {
+                if selected == .results { selected = .recents }
+            } else {
+                selected = .results
+            }
             withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { expanded = !isEmpty }
         }
     }
 
-    // MARK: Gesto (toda la barra se arrastra; solo cuenta el movimiento vertical)
+    // MARK: Gesto
+    // IMPORTANTE: el espacio de coordenadas es global. Con el local, al cambiar la altura
+    // del panel cambiaba el origen del gesto y la barra "temblaba".
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 8)
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
             .onChanged { value in
                 if !isDraggingVertically {
                     guard abs(value.translation.height) > abs(value.translation.width) else { return }
@@ -80,31 +98,32 @@ struct PlacesPanel: View {
     // MARK: Cabecera
 
     private var header: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 7) {
             Capsule()
                 .fill(Color.white.opacity(0.35))
-                .frame(width: 36, height: 4)
-            HStack(spacing: 8) {
+                .frame(width: 40, height: 5)
+            HStack(spacing: 10) {
                 Image(systemName: "mappin.and.ellipse")
+                    .font(.title3)
                     .foregroundStyle(Color.konnectBlue)
-                Text("Lugares").font(.headline)
+                Text("Lugares").font(.title3.bold())
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
                 if !model.places.isEmpty {
                     Button("Limpiar") { model.clearResults() }
-                        .font(.subheadline)
+                        .font(.subheadline.weight(.semibold))
                 }
                 Image(systemName: "chevron.up")
-                    .font(.footnote.weight(.bold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(Double(progress) * 180))
             }
         }
-        .padding(.top, 8)
-        .padding(.horizontal, 18)
+        .padding(.top, 9)
+        .padding(.horizontal, 20)
         .padding(.bottom, 10)
         .frame(height: collapsedHeight)
         .contentShape(Rectangle())
@@ -118,34 +137,32 @@ struct PlacesPanel: View {
     private var tabsRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                pill(title: "Recientes", icon: "clock.fill", tab: .recents)
                 if !model.places.isEmpty {
-                    pill(title: "Resultados", icon: "magnifyingglass", selected: showingResults) {
-                        showingResults = true
-                    }
+                    pill(title: "Resultados", icon: "magnifyingglass", tab: .results)
                 }
                 ForEach(PlaceList.allCases) { list in
-                    pill(title: list.title, icon: list.icon, selected: !showingResults && selectedList == list) {
-                        showingResults = false
-                        selectedList = list
-                    }
+                    pill(title: list.title, icon: list.icon, tab: .list(list))
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 22)
         }
-        .frame(height: 36)
+        .frame(height: pillHeight)
+        .horizontalFade(20)
     }
 
-    private func pill(title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
+    private func pill(title: String, icon: String, tab: PanelTab) -> some View {
+        let isSelected = selected == tab
+        return Button { selected = tab } label: {
+            HStack(spacing: 7) {
                 Image(systemName: icon)
                 Text(title).lineLimit(1)
             }
-            .font(.footnote.weight(.semibold))
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(Color.white)
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .background(selected ? Color.konnectBlue.opacity(0.75) : Color.white.opacity(0.10), in: Capsule())
+            .padding(.horizontal, 15)
+            .frame(height: pillHeight)
+            .background(isSelected ? Color.konnectBlue.opacity(0.8) : Color.white.opacity(0.10), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.pressable)
@@ -153,67 +170,88 @@ struct PlacesPanel: View {
 
     // MARK: Contenido
 
-    private var cardsHeight: CGFloat { range - 36 - 10 - 14 }
-
     private func cardsScroll<C: View>(@ViewBuilder _ content: () -> C) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) { content() }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 22)
         }
         .frame(height: cardsHeight)
+        .horizontalFade(20)
+    }
+
+    private func card(for place: Place, icon: String, color: Color) -> some View {
+        PlaceCard(place: place,
+                  distance: place.distance(from: location.location),
+                  icon: icon, color: color,
+                  width: cardWidth, height: cardHeight) {
+            model.selectedPlace = place
+        }
     }
 
     @ViewBuilder
     private var content: some View {
-        if showingResults && !model.places.isEmpty {
-            cardsScroll {
-                ForEach(model.places.prefix(15)) { place in
-                    PlaceCard(place: place,
-                              distance: place.distance(from: location.location),
-                              icon: model.activeCategory?.icon ?? "mappin.circle.fill",
-                              color: model.activeCategory?.color ?? Color.konnectBlue) {
-                        model.selectedPlace = place
+        switch selected {
+        case .results:
+            if model.places.isEmpty {
+                emptyState(icon: "magnifyingglass", title: "Sin resultados",
+                           text: "Busca un lugar o elige una categoría.")
+            } else {
+                cardsScroll {
+                    ForEach(model.places.prefix(15)) { place in
+                        card(for: place,
+                             icon: model.activeCategory?.icon ?? "mappin.circle.fill",
+                             color: model.activeCategory?.color ?? Color.konnectBlue)
                     }
                 }
             }
-        } else {
-            let items = model.items(in: selectedList)
+        case .recents:
+            if model.recentPlaces.isEmpty {
+                emptyState(icon: "clock.arrow.circlepath", title: "Aún no hay lugares recientes",
+                           text: "Los sitios que busques o abras aparecerán aquí.")
+            } else {
+                cardsScroll {
+                    ForEach(model.recentPlaces) { item in
+                        card(for: item.place, icon: "clock.fill", color: Color.white.opacity(0.75))
+                            .contextMenu {
+                                Button("Quitar de recientes", role: .destructive) {
+                                    model.removeRecentPlace(item)
+                                }
+                            }
+                    }
+                }
+            }
+        case .list(let list):
+            let items = model.items(in: list)
             if items.isEmpty {
-                emptyState
+                emptyState(icon: list.icon, title: "Aún no hay sitios en \(list.title)",
+                           text: "Abre la ficha de un lugar y pulsa Guardar para añadirlo.")
             } else {
                 cardsScroll {
                     ForEach(items) { item in
-                        let place = item.place
-                        PlaceCard(place: place,
-                                  distance: place.distance(from: location.location),
-                                  icon: selectedList.icon,
-                                  color: selectedList.color) {
-                            model.selectedPlace = place
-                        }
-                        .contextMenu {
-                            Button("Quitar de \(selectedList.title)", role: .destructive) {
-                                model.remove(item, from: selectedList)
+                        card(for: item.place, icon: list.icon, color: list.color)
+                            .contextMenu {
+                                Button("Quitar de \(list.title)", role: .destructive) {
+                                    model.remove(item, from: list)
+                                }
                             }
-                        }
                     }
                 }
             }
         }
     }
 
-    private var emptyState: some View {
+    private func emptyState(icon: String, title: String, text: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: selectedList.icon)
-                .font(.system(size: 28))
-                .foregroundStyle(selectedList.color)
-            Text("Aún no hay sitios en \(selectedList.title)")
-                .font(.subheadline.weight(.semibold))
-            Text("Abre la ficha de un lugar y pulsa Guardar para añadirlo.")
-                .font(.caption)
+            Image(systemName: icon)
+                .font(.system(size: 30))
+                .foregroundStyle(Color.konnectBlue)
+            Text(title).font(.headline)
+            Text(text)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 28)
         .frame(maxWidth: .infinity)
         .frame(height: cardsHeight)
     }
@@ -224,37 +262,44 @@ struct PlaceCard: View {
     let distance: String?
     let icon: String
     let color: Color
+    var width: CGFloat = 218
+    var height: CGFloat = 150
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Image(systemName: icon).foregroundStyle(color)
+                    Image(systemName: icon)
+                        .font(.title3)
+                        .foregroundStyle(color)
                     Spacer()
                     if let distance {
-                        Text(distance).font(.caption).foregroundStyle(.secondary)
+                        Text(distance).font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
                 Text(place.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                Text(place.categoryText).font(.caption).foregroundStyle(.secondary)
+                Text(place.categoryText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 if let rating = place.rating {
                     HStack(spacing: 4) {
                         Image(systemName: "star.fill").foregroundStyle(Color.yellow)
                         Text(rating.ratingText)
                     }
-                    .font(.caption)
+                    .font(.subheadline)
                 }
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Color.white)
-            .padding(12)
-            .frame(width: 170, height: 112, alignment: .topLeading)
-            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(14)
+            .frame(width: width, height: height, alignment: .topLeading)
+            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .buttonStyle(.pressable)
     }

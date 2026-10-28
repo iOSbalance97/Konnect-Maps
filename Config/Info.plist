@@ -7,5 +7,11 @@
         <key>Navegacion</key>
         <string>Konnect GPS necesita tu ubicación precisa para marcar tu posición exacta y guiarte paso a paso.</string>
     </dict>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Konnect GPS usa tu ubicación en segundo plano para guardar dónde aparcas el coche y para seguir guiándote con la pantalla bloqueada.</string>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+    </array>
 </dict>
 </plist>

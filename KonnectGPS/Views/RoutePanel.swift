@@ -177,31 +177,46 @@ struct RoutePanel: View {
 
 struct RouteStepsView: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var nav: NavigationEngine
     @Environment(\.dismiss) private var dismiss
 
-    private var steps: [MKRoute.Step] {
-        (model.routes[model.mode]?.route?.steps ?? []).filter { !$0.instructions.isEmpty }
+    private struct StepEntry: Identifiable {
+        let id: Int
+        let step: MKRoute.Step
+    }
+
+    private var steps: [StepEntry] {
+        let all = model.routes[model.mode]?.route?.steps ?? []
+        var result: [StepEntry] = []
+        for (index, step) in all.enumerated() where !step.instructions.isEmpty {
+            result.append(StepEntry(id: index, step: step))
+        }
+        return result
     }
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                ForEach(steps) { entry in
+                    let isNext = model.isNavigating && nav.upcomingStepIndex == entry.id
                     HStack(spacing: 12) {
-                        Image(systemName: maneuverSymbol(for: step.instructions))
+                        Image(systemName: maneuverSymbol(for: entry.step.instructions))
                             .frame(width: 28)
-                            .foregroundStyle(Color.konnectBlue)
+                            .foregroundStyle(isNext ? Color.white : Color.konnectBlue)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(step.instructions)
-                            if step.distance > 0 {
-                                Text(step.distance.distanceText)
+                            Text(entry.step.instructions)
+                                .fontWeight(isNext ? .semibold : .regular)
+                            if entry.step.distance > 0 {
+                                Text(entry.step.distance.distanceText)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
                     }
+                    .listRowBackground(isNext ? Color.konnectBlue.opacity(0.45) : Color.white.opacity(0.06))
                 }
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle("Pasos")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -211,6 +226,6 @@ struct RouteStepsView: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .darkSheetBackground()
+        .subtleGlassSheet()
     }
 }

@@ -191,7 +191,7 @@ final class PlacesService {
     /// Completa un lugar con valoración, horarios, fotos y reseñas de Google.
     func details(for place: Place) async -> Place {
         let key = GoogleConfig.apiKey
-        guard !key.isEmpty, place.categoryText != "Dirección" else { return place }
+        guard !key.isEmpty, place.categoryText != "Dirección", place.categoryText != "Mi coche" else { return place }
         let google = GooglePlacesProvider(apiKey: key)
         var result = place
         do {

@@ -274,3 +274,49 @@ enum PlaceList: String, CaseIterable, Identifiable {
         }
     }
 }
+
+
+// MARK: - Pines de listas en el mapa
+
+struct SavedPin: Identifiable {
+    let id: String
+    let list: PlaceList
+    let item: SavedPlace
+}
+
+// MARK: - Coche aparcado
+
+struct ParkedCar: Codable, Equatable {
+    var latitude: Double
+    var longitude: Double
+    var date: Date
+    var reason: String
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+
+    /// Lugar para mostrar la ficha del coche.
+    var place: Place {
+        var p = Place(name: "Coche aparcado", coordinate: coordinate)
+        p.categoryText = "Mi coche"
+        p.address = "\(reason) · \(date.formatted(date: .abbreviated, time: .shortened))"
+        return p
+    }
+}
+
+// MARK: - Peligros en la ruta (radares y avisos)
+
+struct Hazard {
+    let id: String
+    let coordinate: CLLocationCoordinate2D
+    let title: String
+    let icon: String
+    let color: Color
+    let limit: Int?
+}
+
+struct NearbyHazard {
+    let hazard: Hazard
+    let distance: CLLocationDistance
+}

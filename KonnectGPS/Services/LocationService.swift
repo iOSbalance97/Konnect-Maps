@@ -7,10 +7,11 @@ final class HeadingStore: ObservableObject {
     @Published var degrees: Double = 0
 }
 
-/// Servicio de ubicación: permisos, precisión, posición y rumbo.
+/// Servicio de ubicación: permisos, precisión, posición, rumbo y segundo plano.
 final class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     let headingStore = HeadingStore()
+    private var navigating = false
 
     @Published var location: CLLocation?
     @Published var status: CLAuthorizationStatus = .notDetermined
@@ -30,6 +31,7 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
     }
 
     var isAuthorized: Bool { status == .authorizedWhenInUse || status == .authorizedAlways }
+    var isAlways: Bool { status == .authorizedAlways }
     var isDenied: Bool { status == .denied || status == .restricted }
     /// El usuario concedió solo la ubicación aproximada (sale un área grande en vez de un punto).
     var isReduced: Bool { isAuthorized && accuracy == .reducedAccuracy }
@@ -55,6 +57,11 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
         }
     }
 
+    /// Permiso "Siempre": necesario para detectar el coche aparcado en segundo plano.
+    func requestAlways() {
+        manager.requestAlwaysAuthorization()
+    }
+
     /// Pide ubicación precisa (si el usuario solo dio la aproximada).
     func requestFullAccuracy() {
         manager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: "Navegacion") { [weak self] error in
@@ -68,9 +75,11 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
 
     /// Más precisión y frecuencia mientras se navega.
     func setNavigating(_ on: Bool) {
+        navigating = on
         manager.desiredAccuracy = on ? kCLLocationAccuracyBestForNavigation : kCLLocationAccuracyBest
         manager.distanceFilter = on ? kCLDistanceFilterNone : 3
         manager.activityType = on ? .automotiveNavigation : .otherNavigation
+        applyBackgroundConfig()
     }
 
     func openSettings() {
@@ -83,6 +92,18 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
         manager.startUpdatingLocation()
         if CLLocationManager.headingAvailable() {
             manager.startUpdatingHeading()
+        }
+        applyBackgroundConfig()
+    }
+
+    /// Segundo plano: solo si el modo "location" está declarado en el Info.plist.
+    private func applyBackgroundConfig() {
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
+        guard modes?.contains("location") == true else { return }
+        manager.allowsBackgroundLocationUpdates = isAlways || navigating
+        manager.showsBackgroundLocationIndicator = navigating
+        if isAlways && CLLocationManager.significantLocationChangeMonitoringAvailable() {
+            manager.startMonitoringSignificantLocationChanges()
         }
     }
 

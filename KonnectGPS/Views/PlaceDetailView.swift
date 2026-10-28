@@ -4,19 +4,23 @@ import MapKit
 struct PlaceDetailView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var location: LocationService
+    @EnvironmentObject var parking: ParkingService
     @State private var detail: Place
     @State private var showHours = false
     @State private var showStreetView = false
+    @State private var detent: PresentationDetent = .fraction(0.36)
+
+    private let lowDetent = PresentationDetent.fraction(0.36)
 
     init(place: Place) {
         _detail = State(initialValue: place)
     }
 
+    private var isParkedCar: Bool { detail.categoryText == "Mi coche" }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                hero
-
                 VStack(alignment: .leading, spacing: 6) {
                     Text(detail.name).font(.title.bold())
                     HStack(spacing: 6) {
@@ -28,6 +32,8 @@ struct PlaceDetailView: View {
                 }
 
                 actions
+
+                hero
 
                 Divider()
 
@@ -45,6 +51,20 @@ struct PlaceDetailView: View {
                 }
                 if !detail.weekdayHours.isEmpty { hours }
                 if !detail.reviews.isEmpty { reviews }
+
+                if isParkedCar {
+                    Button {
+                        parking.clear()
+                        model.selectedPlace = nil
+                    } label: {
+                        Label("Quitar coche aparcado", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .foregroundStyle(Color.white)
+                            .liquidGlass(in: Capsule(), tint: Color.red.opacity(0.5))
+                    }
+                    .buttonStyle(.pressable)
+                }
 
                 Button {
                     detail.mapItem.openInMaps()
@@ -65,14 +85,16 @@ struct PlaceDetailView: View {
             }
             .padding(20)
         }
-        .presentationDetents([.medium, .large])
+        // La ficha sube poco: deja ver el mapa. Se abre del todo arrastrando.
+        .presentationDetents([lowDetent, .large], selection: $detent)
+        .presentationBackgroundInteraction(.enabled(upThrough: lowDetent))
         .presentationDragIndicator(.visible)
         .darkSheetBackground()
         .fullScreenCover(isPresented: $showStreetView) {
             StreetViewScreen(title: detail.name, coordinate: detail.coordinate)
         }
         .task {
-            if detail.categoryText != "Dirección" {
+            if detail.categoryText != "Dirección" && !isParkedCar {
                 detail = await model.enrich(detail)
             }
         }
@@ -119,24 +141,28 @@ struct PlaceDetailView: View {
         GlassGroup(spacing: 4) {
             HStack(spacing: 10) {
                 Button {
+                    // Al coche se va a pie.
+                    if isParkedCar { model.mode = .walking }
                     Task { await model.startRoute(to: detail, from: location.location?.coordinate ?? .madrid) }
                 } label: {
-                    ActionLabel(title: "Cómo llegar", icon: "car.fill", prominent: true)
+                    ActionLabel(title: "Cómo llegar", icon: isParkedCar ? "figure.walk" : "car.fill", prominent: true)
                 }
                 .buttonStyle(.pressable)
 
-                Menu {
-                    ForEach(PlaceList.allCases) { list in
-                        Button {
-                            model.toggle(detail, in: list)
-                        } label: {
-                            Label(list.title,
-                                  systemImage: model.contains(detail, in: list) ? "checkmark.circle.fill" : list.icon)
+                if !isParkedCar {
+                    Menu {
+                        ForEach(PlaceList.allCases) { list in
+                            Button {
+                                model.toggle(detail, in: list)
+                            } label: {
+                                Label(list.title,
+                                      systemImage: model.contains(detail, in: list) ? "checkmark.circle.fill" : list.icon)
+                            }
                         }
+                    } label: {
+                        ActionLabel(title: model.isSavedAnywhere(detail) ? "Guardado" : "Guardar",
+                                    icon: model.isSavedAnywhere(detail) ? "bookmark.fill" : "bookmark")
                     }
-                } label: {
-                    ActionLabel(title: model.isSavedAnywhere(detail) ? "Guardado" : "Guardar",
-                                icon: model.isSavedAnywhere(detail) ? "bookmark.fill" : "bookmark")
                 }
 
                 Button { showStreetView = true } label: {

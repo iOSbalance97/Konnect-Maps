@@ -1,50 +1,37 @@
 import SwiftUI
 
-struct BarItem: Identifiable {
-    let tab: AppTab
-    let icon: String
-    let title: String
-    var id: AppTab { tab }
-}
-
-/// Barra inferior: globos circulares flotantes de cristal.
-struct BubbleBar: View {
+/// Un único globo flotante: en el mapa muestra "Tú"; en "Tú" muestra el mapa.
+struct TabBubble: View {
     @Binding var tab: AppTab
 
-    private let items: [BarItem] = [
-        BarItem(tab: .explore, icon: "map.fill", title: "Explorar"),
-        BarItem(tab: .profile, icon: "person.fill", title: "Tú")
-    ]
-
     var body: some View {
-        GlassGroup(spacing: 10) {
-            HStack(spacing: 24) {
-                ForEach(items) { item in
-                    Button {
-                        withAnimation(.spring(duration: 0.35, bounce: 0.25)) { tab = item.tab }
-                    } label: {
-                        Image(systemName: item.icon)
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(Color.white)
-                            .frame(width: 68, height: 68)
-                            .liquidGlass(in: Circle(),
-                                         tint: tab == item.tab ? Color.konnectBlue.opacity(0.75) : Color.glassTint)
-                            .scaleEffect(tab == item.tab ? 1.06 : 1.0)
-                    }
-                    .buttonStyle(.pressable)
-                    .accessibilityLabel(item.title)
-                }
+        let toProfile = tab == .explore
+        Button {
+            withAnimation(.spring(duration: 0.35, bounce: 0.25)) {
+                tab = toProfile ? .profile : .explore
             }
+        } label: {
+            Image(systemName: toProfile ? "person.fill" : "map.fill")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 70, height: 70)
+                .liquidGlass(in: Circle(), tint: Color.glassTint)
         }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(toProfile ? "Tú" : "Mapa")
     }
 }
 
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var location: LocationService
+    @EnvironmentObject var parking: ParkingService
+    @Environment(\.verticalSizeClass) private var vSize
+
+    private var landscape: Bool { vSize == .compact }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: landscape ? .bottomTrailing : .bottom) {
             // El mapa se mantiene vivo al cambiar de sección.
             ExploreView()
                 .opacity(model.tab == .explore ? 1 : 0)
@@ -56,8 +43,9 @@ struct RootView: View {
             }
 
             if !model.isNavigating {
-                BubbleBar(tab: $model.tab)
+                TabBubble(tab: $model.tab)
                     .padding(.bottom, 8)
+                    .padding(.trailing, landscape ? 12 : 0)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -70,6 +58,7 @@ struct RootView: View {
             PlaceDetailView(place: place)
                 .environmentObject(model)
                 .environmentObject(location)
+                .environmentObject(parking)
         }
     }
 }

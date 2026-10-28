@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 
+/// Selector de origen/destino (hoja con cristal esmerilado sutil).
 struct SearchView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var location: LocationService
@@ -16,6 +17,12 @@ struct SearchView: View {
     @State private var results: [Place] = []
     @State private var searchTask: Task<Void, Never>?
     @FocusState private var focused: Bool
+
+    private var rowBackground: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(0.07))
+            .padding(.vertical, 3)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,7 +57,7 @@ struct SearchView: View {
                         } label: {
                             Label("Mi ubicación", systemImage: "location.fill")
                         }
-                        .listRowBackground(Color.clear)
+                        .listRowBackground(rowBackground)
                     }
                     if !model.recents.isEmpty {
                         Section {
@@ -58,7 +65,7 @@ struct SearchView: View {
                                 Button { text = recent } label: {
                                     Label(recent, systemImage: "clock.arrow.circlepath")
                                 }
-                                .listRowBackground(Color.clear)
+                                .listRowBackground(rowBackground)
                             }
                         } header: {
                             HStack {
@@ -87,19 +94,19 @@ struct SearchView: View {
                                 }
                             }
                         }
-                        .listRowBackground(Color.clear)
+                        .listRowBackground(rowBackground)
                     }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
         }
-        .darkSheetBackground()
+        .subtleGlassSheet()
         .onAppear { focused = true }
         .onChange(of: text) { _, newValue in
             searchTask?.cancel()
             searchTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(350))
+                try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
                 let found = await model.query(newValue, near: center)
                 guard !Task.isCancelled else { return }
@@ -113,21 +120,17 @@ struct SearchView: View {
         if let rating = place.rating { parts.append("★ \(rating.ratingText)") }
         parts.append(place.categoryText)
         if let d = place.distance(from: location.location) { parts.append(d) }
+        if !place.address.isEmpty { parts.append(place.address) }
         return parts.joined(separator: " · ")
     }
 
-    /// Intro: si es búsqueda normal, muestra todos los resultados en el mapa;
-    /// si se está eligiendo origen/destino, elige el primer resultado.
+    /// Intro: elige el primer resultado.
     private func submit() {
         let query = text
         model.addRecent(query)
         Task { @MainActor in
             let found = await model.query(query, near: center)
-            if title == SearchTarget.search.title {
-                model.places = found
-                model.activeCategory = nil
-                dismiss()
-            } else if let first = found.first {
+            if let first = found.first {
                 onPick(first)
                 dismiss()
             }

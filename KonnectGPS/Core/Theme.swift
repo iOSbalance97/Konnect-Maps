@@ -61,6 +61,29 @@ extension View {
         #endif
     }
 
+    /// Difumina los bordes laterales (listas horizontales que se cortan).
+    func horizontalFade(_ width: CGFloat = 22) -> some View {
+        mask {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [Color.clear, Color.black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: width)
+                Rectangle().fill(Color.black)
+                LinearGradient(colors: [Color.black, Color.clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: width)
+            }
+        }
+    }
+
+    /// Hoja con cristal esmerilado sutil (se leen bien las direcciones).
+    func subtleGlassSheet() -> some View {
+        presentationBackground {
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                Color.glassDark.opacity(0.5)
+            }
+        }
+    }
+
     /// En iOS 26 las hojas ya son de cristal; antes de iOS 26 se pone un fondo oscuro.
     @ViewBuilder
     func darkSheetBackground() -> some View {
